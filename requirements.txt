@@ -1,0 +1,10 @@
+langchain
+PyMuPDF
+langchain_community
+sentence-transformers
+chromadb
+langchain-google-genai
+langchain-chroma
+gradio
+python-dotenv
+pymilvus
