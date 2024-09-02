@@ -1,0 +1,10 @@
+langchain
+langchain-community
+sentence-transformers
+PyMuPDF
+chromadb
+python-dotenv
+gradio
+pinecone
+langchain_pinecone
+langchain-google-genai
