@@ -2,14 +2,15 @@ import os
 from dotenv import load_dotenv
 from langchain_community.document_loaders.pdf import PyMuPDFLoader
 from langchain_text_splitters.character import RecursiveCharacterTextSplitter
-from embeddingmodels import TransformerEmbedder 
+from helpers.embeddingmodels import TransformerEmbedder 
 from langchain.embeddings import SentenceTransformerEmbeddings
 from langchain_google_genai import ChatGoogleGenerativeAI
-import chromadb
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import Chroma
 from pinecone import Pinecone,ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
+from helpers.chroma_db import chroma_database
+from helpers.pinecone_db import pinecone_database
 
 qa_chain = None
 chunk_size = 700
@@ -18,7 +19,7 @@ list_pdf_text = None
 db = None
 embed_model = None
 
-load_dotenv(dotenv_path=f'{os.getcwd()}/hlepers/.env')
+load_dotenv(dotenv_path=f'{os.getcwd()}/helpers/.env')
 
 def read_pdf(path):
     '''
@@ -44,23 +45,6 @@ def create_chunks(text_data):
     chunk_text_data = text_splitter.split_text(text_data)
     return chunk_text_data
 
-def chroma_embeddings(pdf_data):
-    '''
-    This function would generate embeddings
-    '''
-    collection_name = 'pdf_data'
-    chunks_text = create_chunks(pdf_data)
-    print(embed_model)
-    model = TransformerEmbedder(embed_model)
-    vectors_embeddings = model.generate_embeddings(chunks_text)
-    client = chromadb.Client()
-    collection = client.get_or_create_collection(collection_name)
-    collection.upsert(
-        documents=chunks_text,
-        embeddings=vectors_embeddings.tolist(),
-        ids=[str(i)for i in range(len(vectors_embeddings))]
-    )
-    return collection_name
 
 def retrival_data(coll_name):
     db_model = SentenceTransformerEmbeddings(model_name = embed_model)
@@ -77,11 +61,12 @@ def retrival_data(coll_name):
 # gemini-1.5-flash-001
 def upload_file(file):
     pdf_data = read_pdf(file.name)
+    chunks_text = create_chunks(pdf_data)
     collection_name = ''
     if db == 'pinecone':
-        collection_name = pinecone_db(pdf_data)
+        collection_name = pinecone_database(embed_model, chunks_text)
     else:
-        collection_name = chroma_embeddings(pdf_data)
+        collection_name = chroma_database(embed_model, chunks_text)
     global qa_chain
     qa_chain = retrival_data(collection_name)
 
@@ -96,31 +81,3 @@ def customisation(file, chunksize, chunk_overlap, database, embedding_model):
     db = database
     embed_model = embedding_model
     upload_file(file)
-
-def pinecone_db(pdf_data):
-    '''
-    This would store the vector embeddings in Pinecone database
-    '''
-    index_name = "docs-rag-testchatbot"
-    chunks_text = create_chunks(pdf_data)
-    print(embed_model)
-    model = TransformerEmbedder(model)
-    vectors_embeddings = model.generate_embeddings(chunks_text)
-    pc = Pinecone(api_key=os.getenv('PINECONE_API_KEY'))
-    # pinecone.init(api_key=os.getenv('PINECONE_API_KEY'), environment='us-west1-gcp')
-    if index_name not in pc.list_indexes().names():
-        pc.create_index(
-            name=index_name,
-            dimension=384, 
-            metric="cosine", 
-            spec=ServerlessSpec(
-                cloud="aws", 
-                region="us-east-1"
-            ) 
-        )
-    index = pc.Index(index_name)
-    ids = [f'id_{i}' for i in range(len(chunks_text))]
-    metadata = [{'text' : data} for data in chunks_text]
-    upsert_data = list(zip(ids, vectors_embeddings, metadata))
-    index.upsert(vectors=upsert_data)
-    return index_name
